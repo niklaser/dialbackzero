@@ -2,6 +2,8 @@
 """Validated configuration and staged persistence for Dialback Zero."""
 
 from copy import deepcopy
+from contextlib import contextmanager
+import fcntl
 import ipaddress
 import json
 import os
@@ -182,8 +184,30 @@ def _atomic_write(path, config, mode=0o600):
 def stage(config, config_path=CONFIG_PATH, state_dir=None):
     """Validate and save settings for the next service restart or boot."""
     target = pending_path(config_path, state_dir)
-    _atomic_write(target, config)
+    with settings_guard(target.parent):
+        _atomic_write(target, config)
     return target
+
+
+@contextmanager
+def settings_guard(state_dir):
+    """Serialize web and serial settings writes with the update worker."""
+    updates = Path(state_dir) / "updates"
+    updates.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (updates / "lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ConfigError("An update is running. Change settings after it finishes.") from None
+        status = updates / "status.json"
+        if status.exists():
+            try:
+                phase = json.loads(status.read_text())["phase"]
+            except (OSError, ValueError, KeyError, TypeError):
+                raise ConfigError("Update status is unavailable. Try again later.") from None
+            if phase in {"downloading", "installing", "verifying"}:
+                raise ConfigError("An update is running. Change settings after it finishes.")
+        yield
 
 
 def activate_pending(config_path=CONFIG_PATH, state_dir=None):

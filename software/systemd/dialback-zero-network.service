@@ -1,10 +1,13 @@
 [Unit]
+Requires=dialback-zero-update-recovery.service
+After=dialback-zero-update-recovery.service
 Description=Apply explicitly managed Dialback Zero Wi-Fi profile
 After=dialback-zero-activate.service NetworkManager.service
 Wants=dialback-zero-activate.service NetworkManager.service
 PartOf=dialback-zero.target
 
 [Service]
+Environment=PYTHONDONTWRITEBYTECODE=1
 Type=oneshot
 ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/network.py
 RemainAfterExit=yes

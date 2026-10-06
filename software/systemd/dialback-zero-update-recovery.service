@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover an interrupted Dialback Zero update
+After=local-fs.target
+Before=dialback-zero.target dialback-zero-activate.service dialback-zero-leds.service dialback-zero-forwarding.service dialback-zero-network.service dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service dialback-zero-config.service dialback-zero-modem.service dialback-zero-ethernet.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero-recovery.py recover
+RemainAfterExit=yes
+UMask=0077

@@ -5,6 +5,8 @@ BINARY="${ROOTFS_DIR}/usr/local/bin/dialback-zero-modem"
 test -x "${BINARY}"
 file "${BINARY}" | grep -Eq 'ELF 32-bit.*ARM'
 readelf -A "${BINARY}" | grep -Eq 'Tag_CPU_arch: v6'
+test -f "${ROOTFS_DIR}/opt/dialback-zero/current/release.json"
+test -f "${DEPLOY_DIR}/dialback-zero-${DIALBACK_IMAGE_VERSION}-armv6-update.tar.gz"
 
 test -f "${ROOTFS_DIR}/etc/dialback-zero/config.json"
 test -f "${ROOTFS_DIR}/usr/share/dialback-zero/sounds/dial-up.wav"
@@ -18,6 +20,12 @@ TARGET="${ROOTFS_DIR}/etc/systemd/system/dialback-zero.target"
 TARGET_WANTS='Wants=dialback-zero-activate.service dialback-zero-leds.service dialback-zero-forwarding.service dialback-zero-network.service dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service dialback-zero-config.service dialback-zero-modem.service'
 test -f "${TARGET}"
 grep -Fxq "${TARGET_WANTS}" "${TARGET}"
+grep -Fxq 'Requires=dialback-zero-update-recovery.service' "${TARGET}"
+test -f "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update-recovery.service"
+test -f "${ROOTFS_DIR}/usr/local/lib/dialback-zero-recovery.py"
+test ! -L "${ROOTFS_DIR}/usr/local/lib/dialback-zero-recovery.py"
+test -f "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update.service"
+! grep -Fxq 'PartOf=dialback-zero.target' "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update.service"
 
 for unit in \
 	dialback-zero-activate.service \

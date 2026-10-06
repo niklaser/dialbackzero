@@ -1,0 +1,12 @@
+[Unit]
+Description=Install requested Dialback Zero release updates
+After=dialback-zero-update-recovery.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/update_manager.py worker
+ExecStopPost=/usr/bin/python3 /usr/local/lib/dialback-zero-recovery.py finish
+TimeoutStartSec=15min
+TimeoutStopSec=5min
+UMask=0077

@@ -78,7 +78,7 @@ def check_boot_includes(boot, main_text, ethernet=False):
     scan(main_text, "config.txt")
 
 
-def build_plan(root, hardware="rev-b-ltc2954"):
+def build_plan(root, hardware="rev-b-ltc2954", include_runtime=True):
     if hardware not in {"rev-b-ltc2954", "rev-c-ethernet"}:
         raise ValueError(f"Unsupported hardware: {hardware}")
     ethernet = hardware == "rev-c-ethernet"
@@ -118,6 +118,9 @@ def build_plan(root, hardware="rev-b-ltc2954"):
         inside(root, "etc/asound.conf"): (SOURCE / "asound.conf").read_text(),
         inside(root, "etc/systemd/logind.conf.d/90-dialback-zero.conf"): (SOURCE / "logind.conf").read_text(),
         inside(root, "etc/udev/rules.d/70-dialback-zero-power.rules"): (SOURCE / "power-switch.rules").read_text(),
+        inside(root, "usr/local/lib/dialback-zero-recovery.py"): (SOURCE.parent / "update_recovery.py").read_text(),
+        inside(root, "etc/systemd/system/dialback-zero-update-recovery.service"):
+            (SOURCE.parent / "systemd/dialback-zero-update-recovery.service").read_text(),
     }
     if ethernet:
         for target, source in {
@@ -126,6 +129,10 @@ def build_plan(root, hardware="rev-b-ltc2954"):
             "etc/systemd/system/dialback-zero-ethernet.service": "ethernet.service",
             "etc/systemd/system/NetworkManager.service.d/90-dialback-zero-ethernet.conf": "ethernet-nm.conf",
         }.items():
+            # The full appliance installer places these helpers in its immutable
+            # release tree; direct hardware-only installs retain their old path.
+            if not include_runtime and target.startswith("usr/local/lib/dialback-zero/"):
+                continue
             plan[inside(root, target)] = (SOURCE / source).read_text()
     mask_paths = []
     for unit in MASKS:

@@ -1,4 +1,5 @@
 import copy
+import fcntl
 import json
 import sys
 from pathlib import Path
@@ -66,6 +67,27 @@ class ConfigTests(unittest.TestCase):
         rendered = json.dumps(config.redacted(value))
         self.assertNotIn("private value", rendered)
         self.assertEqual(value["wifi"]["password"], "private value")
+
+    def test_serial_and_web_staging_refuse_an_active_update(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            active = root / "config.json"
+            original = copy.deepcopy(config.DEFAULT_CONFIG)
+            config._atomic_write(active, original)
+            updates = state / "updates"
+            updates.mkdir(parents=True)
+            with (updates / "lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                with self.assertRaisesRegex(config.ConfigError, "update is running"):
+                    config.stage(original, active, state)
+            (updates / "status.json").write_text('{"phase":"downloading"}')
+            with self.assertRaisesRegex(config.ConfigError, "update is running"):
+                config.stage(original, active, state)
+            self.assertFalse(config.pending_path(active, state).exists())
+            self.assertEqual(config.load(active), original)
+            (updates / "status.json").write_text('{"phase":"succeeded"}')
+            self.assertTrue(config.stage(original, active, state).exists())
 
 
 if __name__ == "__main__":

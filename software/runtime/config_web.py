@@ -11,9 +11,17 @@ from urllib.parse import parse_qs, urlsplit
 from dialback_config import CONFIG_PATH, STATE_DIR, ConfigError, load, stage
 from network import apply_wifi
 from hub_status import status as hub_status, probe as probe_hub
+import update_manager
 
 MAX_BODY = 8192
 CSRF_TOKEN = secrets.token_urlsafe(32)
+UPDATE_WRITE_PHASES = {"downloading", "installing", "verifying"}
+UPDATE_PHASE_LABELS = {
+    "idle": "Ready", "checking": "Checking for updates", "available": "Update available",
+    "downloading": "Downloading update", "installing": "Installing update",
+    "verifying": "Verifying update", "succeeded": "Update complete",
+    "rolled_back": "Previous version restored", "failed": "Update failed",
+}
 
 
 def client_allowed(address, config):
@@ -80,6 +88,40 @@ class ConfigHandler(BaseHTTPRequestHandler):
     def _authorized(self, config):
         return client_allowed(self.client_address[0], config) and host_allowed(self.headers.get("Host"), config)
 
+    def _updates(self):
+        return getattr(self.server, "update_backend", update_manager)
+
+    def _update_status(self):
+        try:
+            return self._updates().get_status()
+        except (update_manager.UpdateError, OSError):
+            return {"installed_version": "Unknown", "available_version": None, "phase": "failed",
+                    "message": "Update status is unavailable. Try again before changing settings.",
+                    "unavailable": True}
+
+    def _updates_body(self, status):
+        phase = status["phase"]
+        body = ('<HR><H2>Software updates</H2>'
+                f'<P>Installed version: {escape(str(status["installed_version"]))}</P>'
+                f'<P>Latest version: {escape(str(status["available_version"] or "Not known"))}</P>'
+                f'<P>Status: {escape(UPDATE_PHASE_LABELS.get(phase, "Unknown"))}. '
+                f'{escape(status["message"])}</P>'
+                '<P>Updates preserve your settings and update Dialback Zero software only.</P>')
+        if phase not in UPDATE_WRITE_PHASES | {"checking"}:
+            body += ('<FORM METHOD="POST" ACTION="/updates/check">'
+                     f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
+                     '<P><INPUT TYPE="submit" VALUE="Check for updates"></P></FORM>')
+        if phase == "available" and status["available_version"]:
+            body += ('<P>Installing disconnects the current call. Reconnect afterward and open '
+                     'the settings page to see the result.</P>'
+                     '<FORM METHOD="POST" ACTION="/updates/install">'
+                     f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
+                     '<P><INPUT TYPE="submit" VALUE="Install update"></P></FORM>')
+        if phase in UPDATE_WRITE_PHASES:
+            body += ('<P>Settings and Wi-Fi changes are paused during the update. '
+                     'The current call may disconnect. Reconnect afterward to see the result.</P>')
+        return body + '<P><A HREF="/updates">Refresh update status</A> | <A HREF="/">Settings</A></P>'
+
     def _reply(self, status, title, body):
         page = ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">\n"
                 f"<HTML><HEAD><TITLE>{escape(title)}</TITLE></HEAD>"
@@ -97,8 +139,15 @@ class ConfigHandler(BaseHTTPRequestHandler):
         if not self._authorized(config):
             self._reply(403, "Access denied", "<P>Use localhost or the local PPP link.</P>")
             return
-        if self.path != "/":
+        if self.path not in ("/", "/updates"):
             self._reply(404, "Not found", "")
+            return
+        update_status = self._update_status()
+        if self.path == "/updates":
+            self._reply(200, "Dialback Zero updates", self._updates_body(update_status))
+            return
+        if update_status["phase"] in UPDATE_WRITE_PHASES or update_status.get("unavailable"):
+            self._reply(200, "Dialback Zero settings", self._updates_body(update_status))
             return
         modem, wifi = config["modem"], config["wifi"]
         checked = lambda value: " CHECKED" if value else ""
@@ -132,7 +181,7 @@ class ConfigHandler(BaseHTTPRequestHandler):
                 '<FORM METHOD="POST" ACTION="/test-hub">'
                 f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
                 '<INPUT TYPE="submit" VALUE="Test private web and DNS"></FORM>')
-        self._reply(200, "Dialback Zero settings", body)
+        self._reply(200, "Dialback Zero settings", body + self._updates_body(update_status))
 
     def do_POST(self):
         config = self._config()
@@ -155,6 +204,38 @@ class ConfigHandler(BaseHTTPRequestHandler):
         token = fields.get("csrf", [""])
         if len(token) != 1 or not secrets.compare_digest(token[0], self.server.csrf):
             self._reply(403, "Invalid form token", "")
+            return
+        if self.path in ("/save", "/apply-network"):
+            update_status = self._update_status()
+            if update_status["phase"] in UPDATE_WRITE_PHASES or update_status.get("unavailable"):
+                self._reply(409, "Settings changes paused", self._updates_body(update_status))
+                return
+        if self.path in ("/updates/check", "/updates/install"):
+            if set(fields) != {"csrf"}:
+                self._reply(400, "Invalid update request", "<P>Use the update buttons on the settings page.</P>")
+                return
+            try:
+                if self.path == "/updates/check":
+                    self._updates().request_check()
+                    message = "The update check is running in the background."
+                else:
+                    status = self._update_status()
+                    if status["phase"] != "available" or not status["available_version"]:
+                        self._reply(409, "Update not available", self._updates_body(status))
+                        return
+                    self._updates().request_install()
+                    message = ("The update is running in the background. The current call will disconnect. "
+                               "Reconnect afterward and open the settings page to see the result.")
+            except update_manager.UpdateError as exc:
+                self._reply(409, "Update not started", f'<P>{escape(str(exc))}</P>'
+                            '<P><A HREF="/updates">Update status</A></P>')
+                return
+            except OSError:
+                self._reply(503, "Update not started", '<P>Could not save the update request. '
+                            'Check the device and try again.</P><P><A HREF="/updates">Update status</A></P>')
+                return
+            self._reply(202, "Update request accepted", f'<P>{message}</P>'
+                        '<P><A HREF="/updates">Refresh update status</A></P>')
             return
         if self.path == "/save":
             try:
@@ -185,10 +266,12 @@ class ConfigHandler(BaseHTTPRequestHandler):
 
 
 class ConfigServer(HTTPServer):
-    def __init__(self, address, handler=ConfigHandler, config_path=None, state_dir=None, csrf=None):
+    def __init__(self, address, handler=ConfigHandler, config_path=None, state_dir=None, csrf=None,
+                 update_backend=None):
         self.config_path = config_path or CONFIG_PATH
         self.state_dir = state_dir or STATE_DIR
         self.csrf = csrf or CSRF_TOKEN
+        self.update_backend = update_backend if update_backend is not None else update_manager
         super().__init__(address, handler)
 
     def get_request(self):

@@ -1,4 +1,4 @@
-name: Test and build Raspberry Pi image
+name: Test and build Raspberry Pi image and update
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
         run: python3 -m unittest discover -s image/tests -v
 
   build-image:
-    name: Raspberry Pi OS Lite 32-bit image
+    name: Raspberry Pi OS Lite 32-bit image and ARMv6 update
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -82,19 +82,20 @@ jobs:
             exit 1
           fi
 
-      - name: Build image with pinned pi-gen
+      - name: Build image and matching application update with pinned pi-gen
         env:
           DIALBACK_WORK_DIR: ${{ runner.temp }}/dialback-zero-work
           DIALBACK_IMAGE_VERSION: ${{ steps.version.outputs.version }}
           DIALBACK_SOURCE_COMMIT: ${{ github.sha }}
         run: ./image/build.sh
 
-      - name: Upload image and checksums
+      - name: Upload image, application update, and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dialback-zero-${{ steps.version.outputs.version }}
           path: |
             ${{ runner.temp }}/dialback-zero-work/releases/image/*.img.xz
+            ${{ runner.temp }}/dialback-zero-work/releases/image/*-armv6-update.tar.gz
             ${{ runner.temp }}/dialback-zero-work/releases/image/SHA256SUMS
             ${{ runner.temp }}/dialback-zero-work/releases/image/build-metadata.json
           if-no-files-found: error
@@ -110,13 +111,13 @@ jobs:
       actions: read
       contents: write
     steps:
-      - name: Download built image
+      - name: Download built image and application update
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dialback-zero-${{ github.ref_name }}
           path: release-assets
 
-      - name: Attach image to version-tag release
+      - name: Attach image and application update to version-tag release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -127,5 +128,6 @@ jobs:
           fi
           gh release upload "${GITHUB_REF_NAME}" \
             release-assets/*.img.xz \
+            release-assets/*-armv6-update.tar.gz \
             release-assets/SHA256SUMS \
             release-assets/build-metadata.json --clobber

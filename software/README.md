@@ -19,15 +19,10 @@ Configure Wi-Fi in Raspberry Pi Imager or on the settings page.
 
 ## Update
 
-Copy the current `software/` directory to the Pi. Disconnect any active call,
-then run from its parent directory. This keeps the installed modem executable.
-
-```sh
-sudo python3 software/install.py --root / --allow-live-root \
-  --binary /usr/local/bin/dialback-zero-modem --hardware rev-c-ethernet
-sudo systemctl daemon-reload
-sudo systemctl restart dialback-zero.target
-```
+On the settings page, select **Check for updates**, then **Install update**.
+Installation disconnects the current call; reconnect afterward and open settings
+to see the result. Updates preserve your settings and update Dialback Zero
+software only, not Raspberry Pi OS or the microSD image.
 
 ## Diagnostics
 

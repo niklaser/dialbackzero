@@ -72,7 +72,31 @@ done
 install -m 0755 \
 	"${PROJECT_DIR}/software/install.py" \
 	"${PI_GEN_DIR}/dialback-source/software/install.py"
+install -m 0644 \
+	"${PROJECT_DIR}/software/release.py" \
+	"${PI_GEN_DIR}/dialback-source/software/release.py"
+install -m 0755 \
+	"${PROJECT_DIR}/software/update_recovery.py" \
+	"${PI_GEN_DIR}/dialback-source/software/update_recovery.py"
+install -d -m 0755 \
+	"${PI_GEN_DIR}/dialback-source/image/pi-gen-stage/00-dependencies"
+install -m 0644 \
+	"${SCRIPT_DIR}/pi-gen-stage/00-dependencies/00-packages-nr" \
+	"${PI_GEN_DIR}/dialback-source/image/pi-gen-stage/00-dependencies/00-packages-nr"
+install -m 0755 \
+	"${SCRIPT_DIR}/package_update.py" \
+	"${PI_GEN_DIR}/dialback-source/image/package_update.py"
 cp "${SCRIPT_DIR}/config" "${PI_GEN_DIR}/config"
+# pi-gen sources this file inside Docker. Quote these values as data and export
+# them so the image installer and update exporter see the same build identity.
+python3 - "${PI_GEN_DIR}/config" "${VERSION}" "${SOURCE_COMMIT}" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+with Path(sys.argv[1]).open("a", encoding="utf-8") as config:
+    config.write("\nexport DIALBACK_IMAGE_VERSION=" + shlex.quote(sys.argv[2]) + "\n")
+    config.write("export DIALBACK_SOURCE_COMMIT=" + shlex.quote(sys.argv[3]) + "\n")
+PY
 
 # Export only the customized Lite rootfs, never the unmodified stage2 image.
 touch "${PI_GEN_DIR}/stage2/SKIP_IMAGES"

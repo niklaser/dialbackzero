@@ -1,4 +1,6 @@
 [Unit]
+Requires=dialback-zero-update-recovery.service
+After=dialback-zero-update-recovery.service
 Description=Dialback Zero optional hub PPP endpoint
 After=dialback-zero-activate.service dialback-zero-forwarding.service
 Before=dialback-zero-modem.service
@@ -7,6 +9,7 @@ BindsTo=dialback-zero-forwarding.service
 PartOf=dialback-zero.target
 
 [Service]
+Environment=PYTHONDONTWRITEBYTECODE=1
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/ppp_wrapper.py --profile hub
 Restart=on-failure

@@ -58,6 +58,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(len(manifests), 1)
         self.assertEqual((manifests[0].parent / "etc/asound.conf").read_text(), "# previous ALSA configuration\n")
         self.assertTrue(json.loads(manifests[0].read_text()))
+        self.assertTrue((self.root / "usr/local/lib/dialback-zero-recovery.py").is_file())
+        self.assertTrue((self.root / "etc/systemd/system/dialback-zero-update-recovery.service").is_file())
         self.run_install()
         self.assertEqual(len(list(self.root.glob("var/lib/dialback-zero/backups/*/manifest.json"))), 1)
 

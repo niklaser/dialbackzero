@@ -105,6 +105,8 @@ class ImageDefinitionTests(unittest.TestCase):
         build_script = (IMAGE / "build.sh").read_text()
         self.assertIn('python3 "${SCRIPT_DIR}/patch_pi_gen.py"', build_script)
         self.assertIn("for directory in assets hardware runtime systemd vendor", build_script)
+        self.assertIn('"${PROJECT_DIR}/software/update_recovery.py"', build_script)
+        self.assertIn('"${PI_GEN_DIR}/dialback-source/software/update_recovery.py"', build_script)
         self.assertIn("--exclude '*.private'", build_script)
         self.assertIn("--exclude '.env'", build_script)
         self.assertNotIn('cp -a "${PROJECT_DIR}/software"', build_script)
@@ -165,19 +167,36 @@ class ImageDefinitionTests(unittest.TestCase):
 
             target = units / "dialback-zero.target"
             self.assertEqual(unit_values(target, "Wants"), RUNTIME_UNITS)
+            recovery = "dialback-zero-update-recovery.service"
+            self.assertEqual(unit_values(target, "Requires"), {recovery})
+            self.assertTrue((units / recovery).is_file())
+            self.assertEqual(unit_values(units / recovery, "Before"), {
+                "dialback-zero.target", "dialback-zero-ethernet.service", *RUNTIME_UNITS,
+            })
+            stable_recovery = root / "usr/local/lib/dialback-zero-recovery.py"
+            self.assertTrue(stable_recovery.is_file())
+            self.assertFalse(stable_recovery.is_symlink())
+            self.assertIn("/usr/local/lib/dialback-zero-recovery.py", unit_values(units / recovery, "ExecStart"))
+            worker = units / "dialback-zero-update.service"
+            self.assertTrue(worker.is_file())
+            self.assertNotIn("dialback-zero.target", unit_values(worker, "PartOf"))
             for unit in RUNTIME_UNITS:
                 self.assertTrue((units / unit).is_file(), unit)
+                self.assertIn(recovery, unit_values(units / unit, "Requires"))
+                self.assertIn(recovery, unit_values(units / unit, "After"))
 
             ethernet = units / "dialback-zero-ethernet.service"
             drop_in = units / "NetworkManager.service.d/90-dialback-zero-ethernet.conf"
             self.assertTrue(ethernet.is_file())
+            self.assertIn(recovery, unit_values(ethernet, "Requires"))
+            self.assertIn(recovery, unit_values(ethernet, "After"))
             self.assertEqual(unit_values(drop_in, "Wants"), {"dialback-zero-ethernet.service"})
             self.assertEqual(unit_values(drop_in, "After"), {"dialback-zero-ethernet.service"})
 
             network = units / "dialback-zero-network.service"
             self.assertEqual(
                 unit_values(network, "After"),
-                {"dialback-zero-activate.service", "NetworkManager.service"},
+                {"dialback-zero-activate.service", "NetworkManager.service", recovery},
             )
             self.assertEqual(unit_values(network, "PartOf"), {"dialback-zero.target"})
             self.assertNotIn("dialback-zero-network.service", (units / "dialback-zero-modem.service").read_text())
