@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Create account</h2>
+<form method="post" action="{{ url_for('signup') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p>Username (3-24 letters, numbers, _ or -):<br><input name="username" size="24" maxlength="24" autocomplete="username"></p>
+<p>Password (at least 8 characters):<br><input type="password" name="password" size="30" autocomplete="new-password"></p>
+<p><input type="submit" value="Create account"></p>
+</form>
+<p><a href="{{ url_for('login') }}">Sign in</a></p>
+{% endblock %}

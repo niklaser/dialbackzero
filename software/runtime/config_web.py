@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Local-only, no-JavaScript Dialback Zero configuration server."""
+
+from html import escape
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import ipaddress
+import os
+import secrets
+from urllib.parse import parse_qs, urlsplit
+
+from dialback_config import CONFIG_PATH, STATE_DIR, ConfigError, load, stage
+from network import apply_wifi
+from hub_status import status as hub_status, probe as probe_hub
+
+MAX_BODY = 8192
+CSRF_TOKEN = secrets.token_urlsafe(32)
+
+
+def client_allowed(address, config):
+    try:
+        client = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return client.is_loopback or str(client) in {config["ppp"]["peer"], config["hub"]["peer"]}
+
+
+def host_allowed(value, config):
+    if value is None:  # Legal for old HTTP/1.0 clients; source checks still apply.
+        return True
+    if not value or any(c in value for c in "\r\n/@"):
+        return False
+    try:
+        parsed = urlsplit("//" + value)
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return False
+    if port not in (None, config["web"]["port"]):
+        return False
+    return host in {"localhost", "127.0.0.1", "[::1]", "::1", config["ppp"]["local"], config["hub"]["local"]}
+
+
+def update_from_form(current, fields):
+    """Return a validated staged config. Empty password means keep current."""
+    result = {key: (value.copy() if isinstance(value, dict) else value) for key, value in current.items()}
+    result["modem"] = current["modem"].copy()
+    result["modem"]["numbers"] = {key: value.copy() for key, value in current["modem"]["numbers"].items()}
+    result["wifi"] = current["wifi"].copy()
+    result["audio"] = current["audio"].copy()
+    result["audio"]["volume_percent"] = int(fields.get("volume", [""])[0])
+    result["modem"]["sound_mode"] = fields.get("sound_mode", [""])[0]
+    result["modem"]["baud"] = int(fields.get("baud", [""])[0])
+    result["wifi"]["managed"] = fields.get("wifi_managed", [""])[0] == "yes"
+    result["wifi"]["enabled"] = fields.get("wifi_enabled", [""])[0] == "yes"
+    result["wifi"]["ssid"] = fields.get("wifi_ssid", [""])[0]
+    password = fields.get("wifi_password", [""])[0]
+    if password:
+        result["wifi"]["password"] = password
+    for number in ("2242525", "777"):
+        endpoint = result["modem"]["numbers"][number]
+        endpoint["enabled"] = fields.get("number_" + number, [""])[0] == "yes"
+        if number == "2242525":
+            endpoint["host"] = fields.get("host_" + number, [""])[0]
+            endpoint["port"] = int(fields.get("port_" + number, [""])[0])
+    from dialback_config import validate
+    return validate(result)
+
+
+class ConfigHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+    server_version = "DialbackZero/1"
+
+    def log_message(self, format_string, *args):
+        # Never include request bodies or credentials; BaseHTTPRequestHandler only logs the request line.
+        super().log_message(format_string, *args)
+
+    def _config(self):
+        return load(self.server.config_path)
+
+    def _authorized(self, config):
+        return client_allowed(self.client_address[0], config) and host_allowed(self.headers.get("Host"), config)
+
+    def _reply(self, status, title, body):
+        page = ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">\n"
+                f"<HTML><HEAD><TITLE>{escape(title)}</TITLE></HEAD>"
+                f"<BODY><H1>{escape(title)}</H1>{body}</BODY></HTML>\n").encode("ascii", "xmlcharrefreplace")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=us-ascii")
+        self.send_header("Content-Length", str(len(page)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(page)
+
+    def do_GET(self):
+        config = self._config()
+        if not self._authorized(config):
+            self._reply(403, "Access denied", "<P>Use localhost or the local PPP link.</P>")
+            return
+        if self.path != "/":
+            self._reply(404, "Not found", "")
+            return
+        modem, wifi = config["modem"], config["wifi"]
+        checked = lambda value: " CHECKED" if value else ""
+        selected = lambda value: " SELECTED" if value else ""
+        baud_options = "".join(f'<OPTION VALUE="{baud}"{selected(baud == modem["baud"])}>{baud}</OPTION>'
+                               for baud in (300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200))
+        body = ("<P>Changes are staged. Restart the device to use them.</P>"
+                '<FORM METHOD="POST" ACTION="/save">'
+                f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
+                f'<P>Serial speed <SELECT NAME="baud">{baud_options}</SELECT> bps</P>'
+                f'<P>Sound <SELECT NAME="sound_mode"><OPTION VALUE="dial_and_busy"{selected(modem["sound_mode"] == "dial_and_busy")}>Dial and busy</OPTION>'
+                f'<OPTION VALUE="off"{selected(modem["sound_mode"] == "off")}>Off</OPTION></SELECT></P>'
+                f'<P>Volume (0-100) <INPUT NAME="volume" SIZE="3" MAXLENGTH="3" VALUE="{config["audio"]["volume_percent"]}"></P>'
+                f'<P><INPUT TYPE="checkbox" NAME="number_2242525" VALUE="yes"{checked(modem["numbers"]["2242525"]["enabled"])}> Internet 2242525: '
+                f'<INPUT NAME="host_2242525" SIZE="24" VALUE="{escape(modem["numbers"]["2242525"]["host"], quote=True)}">:'
+                f'<INPUT NAME="port_2242525" SIZE="5" VALUE="{modem["numbers"]["2242525"]["port"]}"></P>'
+                f'<P><INPUT TYPE="checkbox" NAME="number_777" VALUE="yes"{checked(modem["numbers"]["777"]["enabled"])}> Private retro network 777</P>'
+                f'<P><INPUT TYPE="checkbox" NAME="wifi_managed" VALUE="yes"{checked(wifi["managed"])}> Let Dialback Zero manage its own Wi-Fi profile</P>'
+                f'<P><INPUT TYPE="checkbox" NAME="wifi_enabled" VALUE="yes"{checked(wifi["enabled"])}> Enable Wi-Fi</P>'
+                f'<P>Wi-Fi name <INPUT NAME="wifi_ssid" MAXLENGTH="32" VALUE="{escape(wifi["ssid"], quote=True)}"></P>'
+                '<P>New Wi-Fi password <INPUT TYPE="password" NAME="wifi_password" MAXLENGTH="63" VALUE=""> (leave blank to keep it)</P>'
+                '<P><INPUT TYPE="submit" VALUE="Stage settings"></P></FORM>'
+                '<HR><FORM METHOD="POST" ACTION="/apply-network">'
+                f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
+                '<P><INPUT TYPE="submit" VALUE="Apply active Wi-Fi now"> This can end the current connection.</P></FORM>'
+                '<HR><H2>Private retro network</H2>'
+                f'<P>{escape(hub_status(config))}</P>'
+                '<P>A handshake confirms the tunnel peer, not web or DNS availability.</P>'
+                '<P>Dial 777, then open <A HREF="http://retro.net/">retro.net</A>.</P>'
+                f'<P>Settings over this connection: http://{escape(config["hub"]["local"])}/</P>'
+                '<FORM METHOD="POST" ACTION="/test-hub">'
+                f'<INPUT TYPE="hidden" NAME="csrf" VALUE="{escape(self.server.csrf)}">'
+                '<INPUT TYPE="submit" VALUE="Test private web and DNS"></FORM>')
+        self._reply(200, "Dialback Zero settings", body)
+
+    def do_POST(self):
+        config = self._config()
+        if not self._authorized(config):
+            self._reply(403, "Access denied", "")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY or self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/x-www-form-urlencoded":
+            self._reply(413, "Invalid request", "<P>The form request was missing or too large.</P>")
+            return
+        try:
+            fields = parse_qs(self.rfile.read(length).decode("ascii"), keep_blank_values=True,
+                              strict_parsing=True, max_num_fields=30)
+        except (UnicodeDecodeError, ValueError):
+            self._reply(400, "Invalid request", "")
+            return
+        token = fields.get("csrf", [""])
+        if len(token) != 1 or not secrets.compare_digest(token[0], self.server.csrf):
+            self._reply(403, "Invalid form token", "")
+            return
+        if self.path == "/save":
+            try:
+                updated = update_from_form(config, fields)
+                stage(updated, self.server.config_path, self.server.state_dir)
+            except (ConfigError, KeyError, ValueError, OSError) as exc:
+                self._reply(400, "Settings not saved", f"<P>{escape(str(exc))}</P>")
+                return
+            self._reply(200, "Settings staged", "<P>Restart the device to apply them.</P><P><A HREF=\"/\">Back</A></P>")
+        elif self.path == "/test-hub":
+            results = probe_hub(config)
+            body = "<UL>" + "".join(
+                f"<LI>{escape(name)}: {'OK' if ok else 'Failed'} - {escape(detail)}</LI>"
+                for name, ok, detail in results) + '</UL><P><A HREF="/">Back</A></P>'
+            self._reply(200, "Private network test", body)
+        elif self.path == "/apply-network":
+            try:
+                apply_wifi(config)
+            except Exception:
+                self._reply(500, "Wi-Fi apply failed", "<P>See the service log for a non-secret diagnostic.</P>")
+                return
+            self._reply(200, "Wi-Fi applied", '<P><A HREF="/">Back</A></P>')
+        else:
+            self._reply(404, "Not found", "")
+
+    def do_PUT(self):
+        self._reply(405, "Method not allowed", "")
+
+
+class ConfigServer(HTTPServer):
+    def __init__(self, address, handler=ConfigHandler, config_path=None, state_dir=None, csrf=None):
+        self.config_path = config_path or CONFIG_PATH
+        self.state_dir = state_dir or STATE_DIR
+        self.csrf = csrf or CSRF_TOKEN
+        super().__init__(address, handler)
+
+    def get_request(self):
+        request, address = super().get_request()
+        request.settimeout(5)
+        return request, address
+
+
+def main():
+    config = load()
+    server = ConfigServer((config["web"]["bind"], config["web"]["port"]))
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

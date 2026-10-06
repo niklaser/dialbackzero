@@ -1,0 +1,6 @@
+.git
+build
+local
+**/__pycache__
+*.env
+README.md

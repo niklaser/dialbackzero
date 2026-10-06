@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Sign in</h2>
+<form method="post" action="{{ url_for('login') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p>Username:<br><input name="username" size="24" maxlength="24" autocomplete="username"></p>
+<p>Password:<br><input type="password" name="password" size="30" autocomplete="current-password"></p>
+<p><input type="submit" value="Sign in"></p>
+</form>
+<p><a href="{{ url_for('signup') }}">Create an account</a></p>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Edit text file</h2>
+<form method="post" action="{{ url_for('edit') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p>File name:<br><input name="path" size="60" value="{{ path }}"></p>
+<p>Text encoding: <select name="encoding">
+<option value="utf-8"{% if encoding == 'utf-8' %} selected{% endif %}>UTF-8</option>
+<option value="windows-1252"{% if encoding == 'windows-1252' %} selected{% endif %}>Windows-1252</option>
+</select></p>
+<p>Contents:<br><textarea name="content" rows="24" cols="78">{{ content }}</textarea></p>
+<p><input type="submit" value="Save file"></p>
+</form>
+<p><a href="{{ url_for('dashboard') }}">Return without saving</a></p>
+{% endblock %}

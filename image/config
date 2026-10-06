@@ -1,0 +1,15 @@
+# Raspberry Pi OS Lite 32-bit (armhf), including the original ARMv6 Pi Zero.
+IMG_NAME='dialback-zero'
+PI_GEN_RELEASE='Dialback Zero Raspberry Pi OS'
+RELEASE='trixie'
+DEPLOY_COMPRESSION='xz'
+COMPRESSION_LEVEL='6'
+
+ENABLE_CLOUD_INIT='1'
+FIRST_USER_NAME='pi'
+DISABLE_FIRST_BOOT_USER_RENAME='0'
+PASSWORDLESS_SUDO='0'
+ENABLE_SSH='0'
+TARGET_HOSTNAME='dialback-zero'
+
+STAGE_LIST='stage0 stage1 stage2 stage-dialback'

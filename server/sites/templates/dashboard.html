@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Your site</h2>
+<p>Signed in as <b>{{ username }}</b>.</p>
+<form method="post" action="{{ url_for('logout') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="submit" value="Sign out">
+</form>
+{% if not domain %}
+<h3>Choose a domain</h3>
+<p>You may create one private site. Enter its name without http:// or www.</p>
+<form method="post" action="{{ url_for('claim') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input name="domain" size="40" maxlength="253" value="example.com">
+<input type="submit" value="Create site">
+</form>
+{% else %}
+<p>Address: <a href="http://{{ domain }}/">http://{{ domain }}/</a><br>
+Also available as <a href="http://www.{{ domain }}/">http://www.{{ domain }}/</a></p>
+<h3>FTP access</h3>
+<p>FTP host: <b>{{ domain }}</b><br>
+Port: <b>21</b><br>
+Username: <b>{{ username }}</b><br>
+Password: your account password<br>
+Transfer mode: <b>Passive (PASV)</b></p>
+<p>Browser and FTP changes use the same files. Choose an FTP client that
+supports passive mode.</p>
+<p>{{ file_count }} files, {{ used }} bytes used. Limit: 256 files and 10 MiB.</p>
+
+<h3>Files</h3>
+{% if files %}
+<table border="1" cellpadding="4">
+<tr><th>Name</th><th>Bytes</th><th>Actions</th></tr>
+{% for file in files %}
+<tr><td><a href="http://{{ domain }}/{{ public_path(file.path) }}">{{ file.path }}</a></td><td align="right">{{ file.size }}</td><td>
+<a href="{{ url_for('edit', path=file.path) }}">Edit text</a>
+<form method="post" action="{{ url_for('delete') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="path" value="{{ file.path }}">
+<input type="submit" value="Delete">
+</form>
+</td></tr>
+{% endfor %}
+</table>
+{% else %}<p>No files.</p>{% endif %}
+
+<h3>Create a text or HTML file</h3>
+<form method="get" action="{{ url_for('edit') }}">
+<input name="path" size="40" value="new.html">
+<input type="submit" value="Open editor">
+</form>
+
+<h3>Upload a file</h3>
+<form method="post" enctype="multipart/form-data" action="{{ url_for('upload') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p>File: <input type="file" name="file"></p>
+<p>Save as (optional): <input name="path" size="40"></p>
+<p><input type="submit" value="Upload"></p>
+</form>
+<p>Maximum file size: 2 MiB.</p>
+{% endif %}
+{% endblock %}

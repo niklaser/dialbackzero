@@ -1,0 +1,16 @@
+[Unit]
+Description=Dialback Zero local Internet PPP endpoint
+After=dialback-zero-activate.service dialback-zero-forwarding.service
+Before=dialback-zero-modem.service
+Wants=dialback-zero-activate.service
+BindsTo=dialback-zero-forwarding.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/ppp_wrapper.py --profile internet
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

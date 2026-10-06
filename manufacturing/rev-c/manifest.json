@@ -1,0 +1,17 @@
+{
+  "project": "Dialback Zero",
+  "hardware_revision": "C",
+  "factory_parts_per_board": 89,
+  "factory_bom_rows": 41,
+  "self_solder_parts_per_board": 15,
+  "files_sha256": {
+    "hardware/dialback-zero.kicad_pcb": "28a83592259fbbbd4a89090cc8f41d4e5bfb755127777f22b372b93e28170552",
+    "hardware/dialback-zero.kicad_sch": "12711eb77dec810a308c603808cf501baa7b0a27025847d8b2fa67b14c993dc0",
+    "hardware/dialback-zero-assembly.step": "5c98abfb810b89b0d9f225967106deb27db9b35eb38a96956f9eabc4fbed0076",
+    "manufacturing/rev-c/design-bom.csv": "ed20dad74c95df553580aa9d6870319e4d1405455d505ed348fa61db0080a94f",
+    "manufacturing/rev-c/dialback-zero-rev-c-jlcpcb-bom.csv": "d4c904c5d9842286883a09c08ca9b49e97d62c3ffd7b294928da811fe6b9714f",
+    "manufacturing/rev-c/dialback-zero-rev-c-jlcpcb-cpl.csv": "fbe0c31a12444728aca69d51704dd75ac757e3319928b67893b1a52bad0385f8",
+    "manufacturing/rev-c/dialback-zero-rev-c-jlcpcb-gerbers.zip": "a2e3803b2383e7f9de22fe24f809f39aea4a326f9e46a1b547612b44dd885d3c"
+  },
+  "bom_note": "Factory BOM uses the approved C24, C36, U4 and D9 alternatives. CPL includes JLCPCB rotations and the USB-C library-origin offset."
+}

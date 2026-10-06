@@ -1,0 +1,8 @@
+# Rev C only: onboard W5500 Ethernet, SPI0/CE0, IRQ GPIO4 (physical pin 7).
+# GPIO25 is the front NET LED
+[all]
+dtparam=spi=on
+dtoverlay=w5500,int_pin=4,cs=0,speed=10000000
+
+# Do not enable w1-gpio on GPIO4 or another SPI0/CE0 peripheral.
+# RSTn is handled by the board's power-on reset circuit, not a GPIO.

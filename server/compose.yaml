@@ -1,0 +1,138 @@
+services:
+  wireguard:
+    build:
+      context: .
+      target: wireguard
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /run:mode=0700
+    environment:
+      WG_PRIVATE_KEY: ${WG_PRIVATE_KEY:-}
+      WG_PEER_PUBLIC_KEY: ${WG_PEER_PUBLIC_KEY:?Run server/setup.py and import server.env}
+    ports:
+      - "${DBZ_BIND_IP:?Set the server LAN IPv4 address}:${DBZ_WG_PORT:-51820}:51820/udp"
+    sysctls:
+      net.ipv4.ip_forward: "0"
+      net.ipv4.ip_unprivileged_port_start: "0"
+      net.ipv6.conf.all.disable_ipv6: "1"
+    healthcheck:
+      test: [CMD-SHELL, "wg show wg0 public-key >/dev/null && ip -4 address show dev wg0 | grep -q '10.77.0.1/24'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  http:
+    build:
+      context: .
+      target: http
+    restart: unless-stopped
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy
+        restart: true
+      sites:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    volumes:
+      - downloads:/srv/downloads:ro
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://10.77.0.1/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  dns:
+    build:
+      context: .
+      target: dns
+    restart: unless-stopped
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy
+        restart: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    volumes:
+      - site-dns:/srv/site-dns:ro
+    healthcheck:
+      test: [CMD-SHELL, "nslookup www.retro.home.arpa 10.77.0.1 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  sites:
+    build:
+      context: .
+      target: sites
+    restart: unless-stopped
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy
+        restart: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    environment:
+      DBZ_DATA_DIR: /data
+      DBZ_DNS_DIR: /dns
+      DBZ_MEMBERS_HOST: members.retro.net
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    volumes:
+      - sites:/data
+      - site-dns:/dns
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  ftp:
+    build:
+      context: .
+      target: sites
+    entrypoint: [python3, /app/ftp.py]
+    restart: unless-stopped
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy
+        restart: true
+      sites:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    environment:
+      DBZ_DATA_DIR: /data
+      DBZ_DNS_DIR: /dns
+      DBZ_FTP_BIND: 10.77.0.1
+      DBZ_FTP_PORT: "21"
+      DBZ_FTP_PASSIVE_ADDRESS: 10.77.0.1
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    volumes:
+      - sites:/data
+      - site-dns:/dns:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import socket; s=socket.create_connection(('10.77.0.1',21),3); assert s.recv(256).startswith(b'220'); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  downloads:
+  sites:
+  site-dns:

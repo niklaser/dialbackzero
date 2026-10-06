@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Site directory</h2>
+{% if sites %}
+<ul>{% for site in sites %}<li><a href="http://{{ site.domain }}/">{{ site.domain }}</a></li>{% endfor %}</ul>
+{% else %}<p>No sites have been created.</p>{% endif %}
+{% endblock %}

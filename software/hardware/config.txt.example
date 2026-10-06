@@ -1,0 +1,32 @@
+# Dialback Zero Rev B/C: shared settings to add to Raspberry Pi OS config.txt.
+# This is a snippet, not a complete boot configuration file.
+# See docs/hardware.md before applying these settings.
+
+[all]
+
+# UART0 on GPIO14/TX (pin 8) and GPIO15/RX (pin 10).
+# Disables Bluetooth on W models; Wi-Fi remains available.
+enable_uart=1
+dtoverlay=disable-bt
+
+# Mono ALSA audio on GPIO12/PWM0 (pin 32); GPIO13 (pin 33) remains reserved.
+# asound.conf mixes (L+R)/2 into both PCM channels; only GPIO12 is connected.
+# Do not enable pwm/pwm-2chan or I2S audio overlays at the same time.
+dtparam=audio=on
+audio_pwm_mode=2
+dtoverlay=audremap,pins_12_13
+
+# For carriers with the LTC2954-1 power-button controller only.
+# INT is open-drain, active LOW for at least 32 ms; use 10 ms debounce.
+# GPIO3 is reserved for the button and is unavailable for I2C.
+dtparam=i2c_arm=off
+gpio=26=op,dl
+dtoverlay=gpio-shutdown,gpio_pin=3,active_low=1,gpio_pull=up,debounce=10
+# Goes HIGH only at final shutdown; the NPN pulls LTC2954 KILL low.
+# Keep active_low=0 and omit the input parameter: the reboot default is LOW.
+dtoverlay=gpio-poweroff,gpiopin=26,active_low=0
+
+# Seven GPIO LEDs: MR23, NET25, SD22, RD27, CD24, OH5, AA6.
+# HIGH = on. The PWR LED connects to the 5 V supply through its own resistor.
+# PWR is not a GPIO output. These settings do not track modem activity.
+gpio=5,6,22,23,24,25,27=op,dl

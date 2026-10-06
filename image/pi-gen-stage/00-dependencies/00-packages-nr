@@ -1,0 +1,14 @@
+# Dialback Zero runtime
+python3
+python3-libgpiod
+ppp
+network-manager
+alsa-utils
+nftables
+iptables
+wireguard-tools
+
+# Native tcpser build. Kept in the image for field diagnosis/rebuilds.
+build-essential
+libasound2-dev
+binutils

@@ -1,0 +1,16 @@
+[Unit]
+Description=Dialback Zero serial modem
+After=dialback-zero-activate.service dialback-zero-leds.service dialback-zero-ppp-internet.service
+Wants=dialback-zero-activate.service dialback-zero-leds.service dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service dialback-zero-forwarding.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/launcher.py
+Restart=always
+RestartSec=2
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

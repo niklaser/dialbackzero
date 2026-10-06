@@ -1,0 +1,3 @@
+Welcome to Dialback Zero network!
+
+If you can read this file on your computer, the private file download works.

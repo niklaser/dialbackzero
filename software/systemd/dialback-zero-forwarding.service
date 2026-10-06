@@ -1,0 +1,16 @@
+[Unit]
+Description=Dialback Zero PPP forwarding
+After=local-fs.target dialback-zero-activate.service
+Before=network-pre.target dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service
+Wants=network-pre.target dialback-zero-activate.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/forwarding.py apply
+# Keep restrictions installed if stopped; dependent PPP services stop first.
+ExecReload=/usr/bin/python3 /usr/local/lib/dialback-zero/forwarding.py apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

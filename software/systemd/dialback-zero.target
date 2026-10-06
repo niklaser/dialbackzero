@@ -1,0 +1,7 @@
+[Unit]
+Description=Dialback Zero
+Wants=dialback-zero-activate.service dialback-zero-leds.service dialback-zero-forwarding.service dialback-zero-network.service dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service dialback-zero-config.service dialback-zero-modem.service
+After=dialback-zero-activate.service
+
+[Install]
+WantedBy=multi-user.target

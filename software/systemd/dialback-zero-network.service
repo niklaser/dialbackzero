@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply explicitly managed Dialback Zero Wi-Fi profile
+After=dialback-zero-activate.service NetworkManager.service
+Wants=dialback-zero-activate.service NetworkManager.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/network.py
+RemainAfterExit=yes

@@ -1,0 +1,13 @@
+[Unit]
+Description=Activate staged Dialback Zero settings
+After=local-fs.target
+Before=dialback-zero-modem.service dialback-zero-ppp-internet.service dialback-zero-ppp-hub.service dialback-zero-config.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/activate_config.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Installed on first boot, then preserved. MAC follows the physical Pi.
+[connection]
+id=Dialback Zero Ethernet
+uuid=553e90a5-f31d-52a1-a72d-8b514d57b470
+type=ethernet
+autoconnect=true
+autoconnect-priority=100
+
+[match]
+driver=w5100;
+
+[ethernet]
+cloned-mac-address=@MAC@
+
+[ipv4]
+method=auto
+dhcp-client-id=mac
+dhcp-timeout=30
+route-metric=100
+may-fail=false
+
+[ipv6]
+method=auto
+route-metric=100
+may-fail=true

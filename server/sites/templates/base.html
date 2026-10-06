@@ -1,0 +1,17 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>{{ title }} - Retro Hosting</title>
+</head>
+<body bgcolor="#ffffff" text="#000000" link="#0000cc" vlink="#551a8b">
+<h1>Retro Hosting</h1>
+<p><a href="{{ url_for('directory') }}">Site directory</a>{% if session.username %} | <a href="{{ url_for('dashboard') }}">Your site</a>{% endif %}</p>
+{% with messages = get_flashed_messages() %}{% if messages %}
+<ul>{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
+{% endif %}{% endwith %}
+{% block body %}{% endblock %}
+<hr>
+<p><small>Private Dialback Zero network</small></p>
+</body>
+</html>

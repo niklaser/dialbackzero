@@ -1,0 +1,14 @@
+[Unit]
+Description=Dialback Zero local configuration page
+After=local-fs.target dialback-zero-activate.service
+Wants=dialback-zero-activate.service
+PartOf=dialback-zero.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/config_web.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

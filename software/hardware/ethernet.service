@@ -1,0 +1,9 @@
+[Unit]
+Description=Prepare Dialback Zero W5500 identity and default DHCP profile
+Before=NetworkManager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/dialback-zero/prepare-ethernet.py
+RemainAfterExit=yes
