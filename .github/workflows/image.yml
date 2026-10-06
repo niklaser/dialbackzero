@@ -48,8 +48,6 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 360
-    env:
-      DIALBACK_WORK_DIR: ${{ runner.temp }}/dialback-zero-work
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,6 +84,7 @@ jobs:
 
       - name: Build image with pinned pi-gen
         env:
+          DIALBACK_WORK_DIR: ${{ runner.temp }}/dialback-zero-work
           DIALBACK_IMAGE_VERSION: ${{ steps.version.outputs.version }}
           DIALBACK_SOURCE_COMMIT: ${{ github.sha }}
         run: ./image/build.sh
