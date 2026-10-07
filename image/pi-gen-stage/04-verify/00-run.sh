@@ -1,9 +1,22 @@
 #!/bin/bash -e
+set -Eeuo pipefail
+trap 'printf "Image verification failed at line %s: %s\n" "${LINENO}" "${BASH_COMMAND}" >&2' ERR
+export LC_ALL=C
+
+grep_absent() {
+	if grep "$@"; then
+		printf 'Image verification found forbidden content: %s\n' "$*" >&2
+		return 1
+	else
+		test "$?" -eq 1
+	fi
+}
 
 BINARY="${ROOTFS_DIR}/usr/local/bin/dialback-zero-modem"
 
 test -x "${BINARY}"
-file "${BINARY}" | grep -Eq 'ELF 32-bit.*ARM'
+# The installed executable is a symlink into the selected application release.
+file -L "${BINARY}" | grep -Eq 'ELF 32-bit.*ARM'
 readelf -A "${BINARY}" | grep -Eq 'Tag_CPU_arch: v6'
 test -f "${ROOTFS_DIR}/opt/dialback-zero/current/release.json"
 test -f "${DEPLOY_DIR}/dialback-zero-${DIALBACK_IMAGE_VERSION}-armv6-update.tar.gz"
@@ -25,7 +38,7 @@ test -f "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update-recovery.service"
 test -f "${ROOTFS_DIR}/usr/local/lib/dialback-zero-recovery.py"
 test ! -L "${ROOTFS_DIR}/usr/local/lib/dialback-zero-recovery.py"
 test -f "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update.service"
-! grep -Fxq 'PartOf=dialback-zero.target' "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update.service"
+grep_absent -Fxq 'PartOf=dialback-zero.target' "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-update.service"
 
 for unit in \
 	dialback-zero-activate.service \
@@ -52,8 +65,8 @@ NETWORK_UNIT="${ROOTFS_DIR}/etc/systemd/system/dialback-zero-network.service"
 grep -Eq '^After=.*dialback-zero-activate\.service' "${NETWORK_UNIT}"
 grep -Eq '^After=.*NetworkManager\.service' "${NETWORK_UNIT}"
 grep -Fxq 'PartOf=dialback-zero.target' "${NETWORK_UNIT}"
-! grep -Eq '^(Before|RequiredBy)=.*dialback-zero-modem\.service' "${NETWORK_UNIT}"
-! grep -Fq 'dialback-zero-network.service' "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-modem.service"
+grep_absent -Eq '^(Before|RequiredBy)=.*dialback-zero-modem\.service' "${NETWORK_UNIT}"
+grep_absent -Fq 'dialback-zero-network.service' "${ROOTFS_DIR}/etc/systemd/system/dialback-zero-modem.service"
 
 NM_DROPIN="${ROOTFS_DIR}/etc/systemd/system/NetworkManager.service.d/90-dialback-zero-ethernet.conf"
 test -f "${NM_DROPIN}"

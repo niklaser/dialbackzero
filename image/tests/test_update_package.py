@@ -183,8 +183,20 @@ class UpdatePackageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.artifacts.update_manifest(bundle)
 
-    def test_pi_gen_install_stage_exports_the_same_release_as_the_image(self):
-        rootfs = self.root / "rootfs"
+    def run_image_stage(self, stage, rootfs, deploy):
+        environment = {
+            **os.environ, "ROOTFS_DIR": str(rootfs), "DEPLOY_DIR": str(deploy),
+            "DIALBACK_IMAGE_VERSION": "v1.2.3", "DIALBACK_SOURCE_COMMIT": "a" * 40,
+        }
+        # GNU file otherwise follows links implicitly, hiding the regression.
+        environment.pop("POSIXLY_CORRECT", None)
+        return subprocess.run(
+            ["bash", "-e", PROJECT / "image/pi-gen-stage" / stage / "00-run.sh"],
+            env=environment, text=True, capture_output=True,
+        )
+
+    def installed_image(self, fixture_name="rootfs"):
+        rootfs = self.root / fixture_name
         boot = rootfs / "boot/firmware"
         (boot / "overlays").mkdir(parents=True)
         for overlay in ("audremap", "gpio-shutdown", "gpio-poweroff", "disable-bt", "w5500"):
@@ -192,6 +204,7 @@ class UpdatePackageTests(unittest.TestCase):
         (boot / "config.txt").write_text("# fixture\n")
         (boot / "cmdline.txt").write_text("console=serial0,115200 root=fixture rw\n")
         (rootfs / "etc/systemd/system").mkdir(parents=True)
+        (rootfs / "etc/ssh").mkdir()
         network_manager = rootfs / "usr/lib/systemd/system/NetworkManager.service"
         network_manager.parent.mkdir(parents=True)
         network_manager.write_text("[Unit]\n")
@@ -209,14 +222,13 @@ class UpdatePackageTests(unittest.TestCase):
         dependency.parent.mkdir(parents=True)
         shutil.copyfile(PROJECT / "image/pi-gen-stage/00-dependencies/00-packages-nr", dependency)
         shutil.copyfile(PROJECT / "image/package_update.py", staged / "image/package_update.py")
-        deploy = self.root / "deploy"
-        result = subprocess.run(
-            ["bash", PROJECT / "image/pi-gen-stage/03-install/00-run.sh"],
-            env={**os.environ, "ROOTFS_DIR": str(rootfs), "DEPLOY_DIR": str(deploy),
-                 "DIALBACK_IMAGE_VERSION": "v1.2.3", "DIALBACK_SOURCE_COMMIT": "a" * 40},
-            text=True, capture_output=True,
-        )
+        deploy = self.root / (fixture_name + "-deploy")
+        result = self.run_image_stage("03-install", rootfs, deploy)
         self.assertEqual(result.returncode, 0, result.stderr)
+        return rootfs, deploy
+
+    def test_pi_gen_install_stage_exports_the_same_release_as_the_image(self):
+        rootfs, deploy = self.installed_image()
         installed = (rootfs / "opt/dialback-zero/current").resolve()
         manifest = self.package.release.validate_release(installed)
         self.assertEqual(manifest["version"], "v1.2.3")
@@ -227,6 +239,54 @@ class UpdatePackageTests(unittest.TestCase):
         self.assertEqual(stable_recovery.read_bytes(), (PROJECT / "software/update_recovery.py").read_bytes())
         self.assertEqual(self.artifacts.update_manifest(next(deploy.glob("*.tar.gz"))), manifest)
         self.assertEqual((rootfs / "usr/local/bin/dialback-zero-modem").read_bytes(), self.binary.read_bytes())
+
+    def test_pi_gen_verify_stage_accepts_versioned_symlinks_and_cleans_build(self):
+        rootfs, deploy = self.installed_image()
+        for relative in (
+            "opt/dialback-zero/current", "usr/local/bin/dialback-zero-modem",
+            "usr/local/lib/dialback-zero", "usr/share/dialback-zero/sounds",
+        ):
+            self.assertTrue((rootfs / relative).is_symlink(), relative)
+        staged = rootfs / "tmp/dialback-zero-build"
+        self.assertTrue(staged.is_dir())
+
+        result = self.run_image_stage("04-verify", rootfs, deploy)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(staged.exists())
+
+    def test_pi_gen_verify_stage_rejects_invalid_images_before_cleanup(self):
+        for invalid in (
+            "non-arm", "armv7", "dangling-binary", "service-graph", "update-worker-scope",
+            "network-before-modem", "modem-network-dependency", "ssh-key",
+        ):
+            with self.subTest(invalid=invalid):
+                rootfs, deploy = self.installed_image(invalid)
+                binary = rootfs / "usr/local/bin/dialback-zero-modem"
+                if invalid == "non-arm":
+                    binary.write_bytes(arm_elf(machine=62))
+                elif invalid == "armv7":
+                    binary.write_bytes(arm_elf(cpu=10))
+                elif invalid == "dangling-binary":
+                    binary.resolve().unlink()
+                elif invalid == "service-graph":
+                    (rootfs / "etc/systemd/system/dialback-zero.target").write_text("[Unit]\n")
+                elif invalid in {"update-worker-scope", "network-before-modem", "modem-network-dependency"}:
+                    unit, forbidden = {
+                        "update-worker-scope": ("update", "PartOf=dialback-zero.target"),
+                        "network-before-modem": ("network", "Before=dialback-zero-modem.service"),
+                        "modem-network-dependency": ("modem", "Requires=dialback-zero-network.service"),
+                    }[invalid]
+                    with (rootfs / f"etc/systemd/system/dialback-zero-{unit}.service").open("a") as stream:
+                        stream.write("\n" + forbidden + "\n")
+                else:
+                    (rootfs / "etc/ssh/ssh_host_ed25519_key").write_text("private key fixture\n")
+
+                result = self.run_image_stage("04-verify", rootfs, deploy)
+
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Image verification failed at line", result.stderr)
+                self.assertTrue((rootfs / "tmp/dialback-zero-build").is_dir())
 
 
 if __name__ == "__main__":
